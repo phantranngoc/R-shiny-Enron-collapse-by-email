@@ -1,0 +1,637 @@
+---
+title: "Enron’s Story Through Emails: A Dashboard Analysis"
+output:
+  html_document: default
+  pdf_document: default
+date: "2024-11-22"
+Fullname: "Candy PHAN"
+---
+
+> KEY FINDINGS
+
+This analysis presents data on the Enron company's situation from 1999 to 2002, based on email communications among 149 staff members.
+
+Below is a summary of the key findings from the exploration of the Enron email database:
+
+1) A total of `252,349` email conversations occurred over the four-year period.
+
+2) `149` staff members were active in the company during this time.
+
+3) `The year 2001` recorded the highest email volume, with `October 25, 2001`, marking the single day with the most email activity. On this day, the email volume was nearly half the total number of emails sent throughout 1999.
+
+  From the data and historical context, we can infer trends in communication patterns. Between 1999 and 2000, Enron appeared to be in a phase of growth and development. However, starting in mid-2001, financial discrepancies were identified in the company's reports. By November 2001, Enron’s stock price had plunged from a high of $90 per share in mid-2000 to less than $12 per share. The surge in email activity in October 2001 aligns with the unfolding crisis, as employees likely sought to address the mounting challenges.
+(Sources: Enron Scandal, Britannica, Enron Scandal, Wikipedia)
+
+4) `The three most frequent words` in email subjects on October 25, 2001, were `"10," "2001," and "meeting".` This suggests that the company may have been organizing additional meetings on this date to address critical issues.
+
+
+> STEPS TO APPROACHING DATASETS
+
+1)  Understand the Database Structure
+•	Examine the relationships among tables to gain an overview of the database structure and identify key connections.
+
+2)  Data Cleaning
+•	Process and clean the data to ensure accuracy, consistency, and usability for analysis.
+
+3. Begin Data Analysis Based on Four Key Questions
+a) Identify the Most Active Enron Employees:
+•	Determine the Top 10 senders based on the number of emails sent within the database.
+b) Analyze User Roles and Status:
+•	Examine the positions or roles of the Top 10 senders identified by the number of emails.
+c) Explore Temporal Dynamics of Messages:
+•	Analyze the email volume by year using a histogram to visualize trends over time.
+d) Perform a Basic Content Analysis of Messages:
+•	Identify the three most frequent words in the email subjects on the date with the highest email volume.
+
+
+>  Load Enron.rdata into the R Markdown document
+
+```{r}
+
+load("Enron.RData")
+
+
+```
+
+
+
+- Install & load libraries to analysis data
+
+```{r}
+# run app
+library(shiny)
+
+# package to deal with large databases
+library(dplyr)
+
+# extract words 
+library(tidyr)
+
+library(tidytext)
+
+# Install package to create relational database: dm = data model
+
+# install.packages("dm")
+library(dm)
+
+# plot
+library(ggplot2)
+
+# dashboard: install.packages("shinydashboard")
+library(shinydashboard)
+
+# export to excel
+library(writexl)
+```
+
+> STEP 0: OVERVIEW THE RELATIONSHIP AMONG TABLES
+
+```{r}
+# Create the data model with all tables
+dm <- dm() %>%
+  dm_add_tbl(employeelist, message, recipientinfo, referenceinfo)
+```
+
+```{r}
+# Create a data model with all four tables
+dm_model <- dm() %>%
+  dm_add_tbl(employeelist, message, recipientinfo, referenceinfo) %>%
+  
+  # Define primary keys
+  dm_add_pk(employeelist, Email_id) %>%
+  dm_add_pk(message, mid) %>%
+  dm_add_pk(recipientinfo, mid) %>%
+  dm_add_pk(referenceinfo, mid) %>%
+  
+  # Define foreign keys based on relationships
+  dm_add_fk(message, sender, employeelist) %>%
+  dm_add_fk(recipientinfo, mid, message) %>%
+  dm_add_fk(referenceinfo, mid, recipientinfo) %>%
+  
+  # Additional foreign key: recipientinfo to employeelist on rvalue = Email_id
+  dm_add_fk(recipientinfo, rvalue, employeelist, Email_id)
+
+# Visualize the data model
+dm_model %>% dm_draw()
+
+```
+
+
+> STEP 1: CLEAN DATASET
+
+> 1) Table: 'employeelist'
+
+```{r}
+head(employeelist,5)
+```
+
+- convert all column names to lowercase
+
+```{r}
+employeelist <- employeelist %>%
+ rename_with(tolower)
+
+
+head(employeelist, 5)
+```
+- rename: email_id = email_1
+
+```{r}
+
+employeelist_rename <- employeelist %>%
+ rename(email1 = email_id)
+
+head(employeelist, 5)
+
+```
+
+=> Pivot the four email columns to identify duplicate emails. Then, assess whether the supplementary emails in columns 2 to 4 are useful. Based on this evaluation, decide whether to keep or drop them
+
+
+```{r}
+
+# Pivot the email columns into a long format
+employeelist_long <- employeelist_rename  %>%
+  pivot_longer(cols = starts_with("email"), 
+               names_to = "num_email", 
+               values_to = "email_id") %>%
+  filter(!is.na(email_id))  
+
+# Check for duplicates and filter for rows where email_id is NA or blank
+duplicates <- employeelist_long %>%
+  filter(is.na(email_id) | email_id == "" | duplicated(email_id)) %>%
+  group_by(email_id) %>%
+  filter(n() > 1 | is.na(email_id) | email_id == "") %>%
+  ungroup()
+
+# View duplicates and rows with NA or blank email_id
+print(duplicates)
+
+
+```
+
+
+```{r}
+# Remove rows where email_id is NA or bank 
+employeelist_long <- employeelist_long %>%
+  filter(!is.na(email_id) & email_id != "")  
+
+# View the result to check for NA removal
+head(employeelist_long, 5)
+
+```
+- Create the new columns as fullname = first name + last name 
+
+```{r}
+# Create a new column fullname by combining firstname and lastname with a space
+employeelist_long <- employeelist_long %>%
+  mutate(fullname = paste(firstname, lastname, sep = " "))
+
+# View the result
+head(employeelist_long, 5)
+
+```
+
+- Connect to the message table to give the final decision to keep or remove this indicators
+
+```{r}
+employ_text <- left_join(message, employeelist_long, by = c("sender" = "email_id"))
+
+head(employ_text, 5)
+```
+
+
+- Count how many email from 2 to 4 using in the message table 
+
+```{r}
+
+r_check_emails_counts <- table(employ_text$num_email)
+print(r_check_emails_counts)
+
+```
+=>Based on the results, email_1 appears to be the primary email associated with the company, which aligns with expectations.
+
+Among emails 2 to 4, only email_3 was referenced in the message system between 1999 and 2002. Therefore, only email_1 and email_3 are retained in the message system.
+
+- Drop  the mail 2 & email 4
+
+- Update the employeelist_long dataset by retaining only email_1 and email_4
+
+```{r}
+employeelist_long_update <- employeelist_long %>%
+ filter(num_email %in% c("email1", "email3"))
+
+head(employeelist_long_update, 5)
+
+```
+- Check the position
+
+```{r}
+# check the position unique
+
+unique(employeelist_long_update$status)
+
+```
+```{r}
+# Convert the 'status' column to a character type to ensure that R does not treat it as a factor, which would otherwise result in automatic conversion to numeric values.
+
+employeelist_long_update$status <- as.character(employeelist_long_update$status)
+
+# Replace NA values with "N/A"
+employeelist_long_update$status <- ifelse(is.na(employeelist_long_update$status), "N/A", employeelist_long_update$status)
+
+# Verify the change
+unique(employeelist_long_update$status)
+
+
+```
+- Count the number of staffs with their position + see the number of email
+
+```{r}
+# Calculate the count of staff members by status and the number of emails per staff
+staff_email_count <- employeelist_long_update %>%
+  group_by(status, eid) %>%
+  summarise(email_count = n(), .groups = "drop") %>% 
+  group_by(status) %>%
+  summarise(staff_count = n_distinct(eid), total_emails = sum(email_count), .groups = "drop")  
+
+# Calculate the overall totals
+total_row <- staff_email_count %>%
+  summarise(status = "Total",  
+            staff_count = sum(staff_count),
+            total_emails = sum(total_emails))
+
+# Bind the total row to the main summary table
+staff_email_count <- bind_rows(staff_email_count, total_row)
+
+# View the result
+print(staff_email_count)
+
+
+```
+
+
+=> Conclusion: "The total staff count is 149, as confirmed by the report. Each group has at least one person with more than one lmain email address except "In House Lawyer" staff."
+
+
+> 2) Table: 'message'
+
+- Overview data
+
+```{r}
+
+# Overview data
+head(message, 5)
+
+```
+
+- Check the missing values
+
+
+```{r}
+# Identify columns with NA or blank values
+missing_values_summary <- message %>%
+  summarise(across(everything(), ~ sum(is.na(.) | . == ""), .names = "missing_{.col}"))
+
+# View the result
+print(missing_values_summary)
+```
+=> Conclusion: 'No missing values in the key columns as mid, sender or date'
+
+- Check the date format & remove the year not belongs the range from 1999 to 2002
+
+```{r}
+
+# Convert date column to Date format if it's not already
+message$date <- as.Date(message$date, format = "%Y-%m-%d") 
+
+# Filter rows where date is between 1999-01-01 and 2002-12-31
+message_filtered <- message %>%
+  filter(date >= as.Date("1999-01-01") & date <= as.Date("2002-12-31"))
+
+# Check if the conversion worked as expected
+str(message_filtered$date) 
+```
+- Changing the volume email over the date 
+
+
+```{r}
+
+# Extract year from the date column and count the number of emails per year
+emails_per_year <- message_filtered  %>%
+  mutate(year = format(date, "%Y")) %>% 
+  group_by(year) %>%
+  summarise(total_emails = n()) %>%   
+   arrange(desc(total_emails)) 
+
+# View the result
+print(emails_per_year)
+
+```
+
+
+=> present the result in graph as below
+
+```{r}
+# Create a histogram of email volume over time
+emails_per_year <- emails_per_year %>%
+  mutate(year = as.factor(year))  # Convert year to a factor to avoid extra years
+
+ggplot(emails_per_year, aes(x = year, y = total_emails)) +
+  geom_bar(stat = "identity", color = "black", fill = "lightblue") +
+  labs(title = "Change in the Volume of Email Communication",
+       x = "Year",
+       y = "Number of Emails") +
+  theme_minimal()
+
+
+```
+
+
+- Find the date with the highest number of sent email 
+
+```{r}
+# Group by date, count the number of emails per date, and find the date with the highest count
+date_with_max_emails <- message_filtered %>%
+  group_by(date) %>%
+  summarise(total_emails = n()) %>%  
+  filter(total_emails == max(total_emails))  
+
+# View the result
+print(date_with_max_emails)
+```
+=>  Conclusion: The year 2001 recorded the highest number of emails, while October 25 of this year marked the day with the highest email volume, which is nearly half of the total number of emails sent in 1999.
+
+Based on the actual situation, we can infer the trend. From 1999 to 2000, Enron was in its development phase. However, starting in 2001, specifically in mid-2001, the company discovered discrepancies in its financial reports. By November of that year, Enron's stock price had plummeted from a high of $90 per share in mid-2000 to less than $12. Therefore, it is reasonable to expect the highest volume of emails occurred in October 2001.
+(Sources: Enron scandal, https://www.britannica.com/event/Enron-scandal/Downfall-and-bankruptcy  + https://en.wikipedia.org/wiki/Enron_scandal)  
+
+
+
+> TOP 10 senders by number of emails for all periods
+
+```{r}
+# Calculate the top 10 senders by number of emails for all periods
+top_senders <- message_filtered %>%
+  group_by(sender) %>%
+  summarise(email_count = n()) %>%  
+  arrange(desc(email_count)) %>%  
+  slice_head(n = 10)  
+# View the result
+print(top_senders)
+
+```
+
+
+- Connect with the employeelist to extract the full_name of senders
+
+```{r}
+sender_fullname <- inner_join(top_senders, employeelist_long_update, by = c("sender" = "email_id"))
+
+print(sender_fullname)
+```
+
+> After connecting the data, two email addresses, no.address@enron.com and enron.announcements@enron.com, are recognized as general email accounts within the ENRON company. As a result, these emails cannot display the full name.
+
+
+```{r}
+# Horizontal bar chart for top 10 email senders
+ggplot(sender_fullname, aes(x = reorder(fullname, email_count), y = email_count)) +
+  geom_bar(stat = "identity", fill = "lightblue", color = "black") +
+  geom_text(aes(label = email_count), hjust = 1, color = "black", size = 3) +  
+  labs(
+    title = "Top 10* senders who sent the most emails between 1999 to 2002",
+    x = " ",
+    y = " "
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 10), 
+    legend.position = "none" 
+  ) +
+  coord_flip() 
+
+
+
+```
+
+
+Conclusion: `Jeff Dasovich` is the top senders, with 6273 emails sent, reaching a wide network within the company
+
+
+- Top 10 senders by number of emails for each year
+
+```{r}
+# Calculate the top 10 senders by number of emails for each year
+top_senders_by_year <- message_filtered %>%
+  mutate(year = format(date, "%Y")) %>%  
+  filter(year %in% c("1999", "2000", "2001", "2002")) %>%  
+  group_by(year, sender) %>%  
+  summarise(email_count = n(), .groups = "drop") %>%  
+  arrange(year, desc(email_count)) %>%  #
+  group_by(year) %>%  
+  slice_head(n = 10)  
+
+# View the result
+print (top_senders_by_year)
+
+```
+
+- Connect with the employeelist to extract the full_name of senders
+
+```{r}
+top10_sender_eachyear <- inner_join(top_senders_by_year, employeelist_long_update, by = c("sender" = "email_id"))
+
+print(top10_sender_eachyear)
+```
+
+
+
+```{r}
+# Create the horizontal grouped bar chart
+ggplot(top10_sender_eachyear, aes(x = reorder(fullname, email_count), y = email_count, fill = year)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Top 10 senders for each year",
+    x = " ",
+    y = "number of emails"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 10), 
+    legend.position = "top" 
+  ) +
+  scale_fill_brewer(palette = "Set2") + 
+  coord_flip() 
+
+
+
+```
+
+> show the status of top 10 senders
+
+```{r}
+# Create the horizontal grouped bar chart
+
+ggplot(top10_sender_eachyear, aes(x = reorder(status, email_count), y = email_count, fill = year)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "The position of top 10 senders for each year",
+    x = " ",
+    y = "number of emails"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 10),
+    legend.position = "top" 
+  ) +
+  scale_fill_brewer(palette = "Set2") + 
+  coord_flip() 
+
+```
+
+
+=> The majority of emails were sent by employees, managers, and vice presidents, with a focus on 2001, the year of Enron's collapse.
+
+
+> Table 3:  Recipientinfo
+
+```{r}
+head(recipientinfo, 10)
+```
+- Count: how many type of email
+
+```{r}
+
+# Count the type of email
+
+rtype_counts <- table(recipientinfo$rtype)
+
+print(rtype_counts)
+
+```
+```{r}
+# develop the bar chart
+
+rtype_counts <- as.data.frame(table(recipientinfo$rtype))
+
+# Rename columns for clarity
+colnames(rtype_counts) <- c("rtype", "count")
+
+# Create a horizontal bar chart
+ggplot(rtype_counts, aes(x = count, y = reorder(rtype, count))) +
+  geom_bar(stat = "identity", fill = "lightblue", color = "black") +
+  geom_text(aes(label = count), hjust = 1) +
+  
+  labs(title = "Email Type Distribution",
+       x = "numbers",
+       y = "type of Email") +
+  theme_minimal()
+```
+
+=> Actually, one email can be send to many people, so check the unique message with type TO & count how many mid send to more than one person 
+
+```{r}
+# Filter for unique messages with type TO
+unique_message_to <- recipientinfo %>% 
+  filter(rtype == "TO") %>%
+  distinct(mid, .keep_all = TRUE) 
+
+# Count the number of unique emails with type TO
+unique_message_count <- nrow(unique_message_to)
+
+# Print the number of unique emails
+print(unique_message_count)
+
+```
+
+
+```{r}
+# Count how many unique mid were sent to more than one person
+messages_to_multiple <- recipientinfo %>%
+  distinct(mid, rvalue, .keep_all = TRUE) %>%
+  group_by(mid) %>%
+  summarise(recipient_count = n()) %>%        
+  filter(recipient_count > 1)                 
+
+# Count the number of such messages
+number_of_messages <- nrow(messages_to_multiple)
+
+# Print the result
+print(number_of_messages)
+
+```
+=> A total of 105,896 emails were exchanged as conversations within the Enron company between 1999 and 2002. 
+
+
+- Top the email was sent during this time
+
+```{r}
+# Find the mid with the highest number of recipients
+top_message <- recipientinfo %>%
+  filter(rtype == "TO") %>%
+  group_by(mid) %>%
+  summarise(recipient_count = n()) %>%         
+  arrange(desc(recipient_count)) %>%          
+  slice(1)                                    
+
+# Print the top message
+print(top_message)
+
+```
+=> Connect to the referenceinfo table to see the detailed message, but it is unclear why this information cannot be found there. I guess that this message is not in referenceinfo
+
+
+```{r}
+find_message <- inner_join(top_message, referenceinfo, by = "mid")
+print(find_message)
+```
+
+
+
+> Table 4: Referenceinfor
+
+- See the content of the email sent during the highest number of email (25/10/2001)
+
+```{r}
+# Filter 'message' for the highest number of emails
+filtered_message <- message_filtered %>%
+  filter(date == as.Date("2001-10-25"))
+
+# Perform the inner join with 'referenceinfo'
+message_content <- inner_join(filtered_message, referenceinfo, by = "mid")
+
+# Print the result
+head(message_content, 2)
+
+```
+
+- look for the top 3 most mentioned words in the subject across the period
+
+```{r}
+
+# List of stop words to exclude
+custom_stop_words <- c("re", "fw", "for", "and", "to", "enron", "s", "01", "on", "how", "of", "in", "the", "eol", "today", "with")
+
+# Analyze the 'subject' column from the 'content' dataset
+subject_words <- message_content %>%
+  select(subject) %>%               
+  unnest_tokens(word, subject) %>%  
+  filter(!word %in% custom_stop_words) %>%  
+  count(word, sort = TRUE)          
+
+# Display the top 3 most mentioned words
+print(head(subject_words, 3))
+
+```
+
+=> ‘10’, ‘2001’, and ‘meeting’ are the most frequently mentioned words in the subject lines of all emails on 25/10/2001. On this day, Enron was more likely to organize additional meetings 
+
+
+
+
+
+
+
+
+
+
