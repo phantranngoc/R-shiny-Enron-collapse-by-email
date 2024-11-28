@@ -1,0 +1,231 @@
+library(shiny)
+library(shinydashboard)
+
+# Define UI ----
+ui <- dashboardPage(
+  dashboardHeader(title = "A Dashboard Analysis"),
+  dashboardSidebar(
+    selectInput(
+      inputId = "year_barchart",
+      label = "Year:",
+      choices = list("All" = "All", "1999" = "1999", "2000" = "2000", "2001" = "2001", "2002" = "2002"),
+      selected = "All"
+    ),
+    selectInput(
+      inputId = "position",
+      label = "Position:",
+      choices = list("All" = "All", "CEO" = "CEO", "Director" = "Director", "Employee" = "Employee", 
+                     "In House Lawyer" = "In House Lawyer", "Manager" = "Manager", "Managing Director" = "Managing Director", 
+                     "N/A" = "N/A", "President" = "President", "Trader" = "Trader", "Vice President" = "Vice President"),
+      selected = "All"
+    ),
+    
+    # Show: The date with the highest number of email exchanges 
+    checkboxInput(
+      inputId = "show_info",
+      label = "Show date of highest number of email exchanges",
+      value = FALSE
+    ),
+    
+    # Conditional panel to display the box when the checkbox is checked
+    conditionalPanel(
+      condition = "input.show_info == true",  
+      box(
+        title = "25/10/2001",
+        status = "primary",
+        solidHeader = FALSE,
+        width = 12
+      )
+    ), 
+    
+    # Show : The 3 most mentioned words during the highest number of conversations
+    checkboxInput(
+      inputId = "show_info_2",
+      label = "03 most mentioned words during the highest number of emails",
+      value = FALSE
+    ),
+    
+    # Conditional panel to display the box when the checkbox is checked
+    conditionalPanel(
+      condition = "input.show_info_2 == true",  
+      box(
+        title = "10, 2001, meeting",
+        status = "primary",
+        solidHeader = FALSE,
+        width = 12
+      )
+    
+   ), 
+    # Notice: 
+   helpText(HTML('<div style="text-align:left;margin-left:0.5cm;">*Two email addresses, no.address@enron.com and enron.announcements@enron.com, are recognized as general email accounts within the ENRON company. As a result, these emails cannot display the full name in Top 10* senders.</div>'))
+  ),
+  dashboardBody(
+    fluidRow(
+      valueBoxOutput("totalEmailsBox", width = 6),
+      valueBoxOutput("totalStaffBox", width = 6)
+    ),
+    fluidRow(
+      box(
+        title = "Top 10* Senders by number of emails",
+        status = "primary",
+        solidHeader = TRUE,
+        plotOutput("topSendersChart", height = "400px"),
+        width = 6
+      ),
+      box(
+        title = "The position of top 10 senders",
+        status = "primary",
+        solidHeader = TRUE,
+        plotOutput("pieChart", height = "400px"),
+        width = 6
+      )
+    ),
+    fluidRow(
+      box(
+        title = "Detailed Email Volume by Year",
+        status = "primary",
+        solidHeader = TRUE,
+        plotOutput("distPlot", height = "400px"),
+        width = 12
+      )
+    )
+  )
+)
+
+# Define server logic ----
+server <- function(input, output) {
+  
+  # Total Emails Box
+  output$totalEmailsBox <- renderValueBox({
+    total <- if (input$year_barchart == "All") {
+      sum(emails_per_year$total_emails)
+    } else {
+      filtered_data <- emails_per_year %>%
+        filter(year == input$year_barchart)
+      sum(filtered_data$total_emails, na.rm = TRUE)
+    }
+    valueBox(
+      value = total,
+      subtitle = "Total Emails",
+      icon = icon("envelope"),
+      color = "blue"
+    )
+  })
+  
+  # Total Staff Box
+  output$totalStaffBox <- renderValueBox({
+    total <- if (input$position == "All") {
+      sum(staff_email_count %>%
+            filter(status != "Total") %>%
+            pull(staff_count))
+    } else {
+      filtered_data <- staff_email_count %>%
+        filter(status == input$position)
+      sum(filtered_data$staff_count, na.rm = TRUE)
+    }
+    valueBox(
+      value = total,
+      subtitle = "Total Staffs",
+      icon = icon("users"),
+      color = "teal"
+    )
+  })
+  
+  # Top 10 Senders Chart
+  output$topSendersChart <- renderPlot({
+    if (input$year_barchart == "All") {
+      top_senders <- message_filtered %>%
+        group_by(sender) %>%
+        summarise(email_count = n(), .groups = "drop") %>%
+        arrange(desc(email_count)) %>%
+        slice(1:10)
+      
+      sender_fullname <- inner_join(top_senders, employeelist_long_update, by = c("sender" = "email_id"))
+      
+      ggplot(sender_fullname, aes(x = reorder(fullname, email_count), y = email_count)) +
+        geom_bar(stat = "identity", fill = "lightblue", color = "white") +
+        geom_text(aes(label = email_count), hjust = 1, color = "black", size = 3) +
+        labs(title = " ", x = " ", y = " ") +
+        theme_minimal() +
+        theme(axis.text.y = element_text(size = 10)) +
+        coord_flip()
+      
+    } else {
+      top_senders_year <- message_filtered %>%
+        filter(format(date, "%Y") == input$year_barchart) %>%
+        group_by(sender) %>%
+        summarise(email_count = n(), .groups = "drop") %>%
+        arrange(desc(email_count)) %>%
+        slice(1:10)
+      
+      sender_fullname_year <- inner_join(top_senders_year, employeelist_long_update, by = c("sender" = "email_id"))
+      
+      ggplot(sender_fullname_year, aes(x = reorder(fullname, email_count), y = email_count)) +
+        geom_bar(stat = "identity", fill = "lightblue", color = "white") +
+        geom_text(aes(label = email_count), hjust = 1, color = "black", size = 3) +
+        labs(title = " ", x = " ", y = " ") +
+        theme_minimal() +
+        theme(axis.text.y = element_text(size = 10)) +
+        coord_flip()
+    }
+  })
+  
+  # Pie Chart for Position Distribution of Top Senders
+  output$pieChart <- renderPlot({
+    if (input$year_barchart == "All") {
+      top_senders <- message_filtered %>%
+        group_by(sender) %>%
+        summarise(email_count = n(), .groups = "drop") %>%
+        arrange(desc(email_count)) %>%
+        slice(1:10)
+      
+      sender_fullname <- inner_join(top_senders, employeelist_long_update, by = c("sender" = "email_id"))
+    } else {
+      top_senders_year <- message_filtered %>%
+        filter(format(date, "%Y") == input$year_barchart) %>%
+        group_by(sender) %>%
+        summarise(email_count = n(), .groups = "drop") %>%
+        arrange(desc(email_count)) %>%
+        slice(1:10)
+      
+      sender_fullname <- inner_join(top_senders_year, employeelist_long_update, by = c("sender" = "email_id"))
+    }
+    
+    pie_data <- sender_fullname %>%
+      group_by(status) %>%
+      summarise(email_count = sum(email_count), .groups = "drop") %>%
+      mutate(percent = round((email_count / sum(email_count)) * 100, 1)) %>%
+      mutate(status = forcats::fct_reorder(status, email_count, .desc = FALSE))
+    
+    
+    ggplot(pie_data, aes(x = "", y = email_count, fill = status)) +
+      geom_bar(stat = "identity", width = 1) +
+      coord_polar("y") +
+      geom_text(aes(label = paste0(percent, "%")), position = position_stack(vjust = 0.5)) +
+      labs(fill = "Position") + 
+      scale_fill_brewer(palette = "Blues") + 
+      theme_void()
+  })
+  
+  # Detailed Histogram
+  output$distPlot <- renderPlot({
+    if (input$year_barchart == "All") {
+      ggplot(emails_per_year, aes(x = year, y = total_emails)) +
+        geom_bar(stat = "identity", fill = "lightblue", color = "white") +
+        geom_text(aes(label = total_emails), vjust = -0.3, color = "black", size = 3) +
+        labs(title = " ", x = "Year", y = "Number of Emails") +
+        theme_minimal()
+    } else {
+      filtered_data <- message_filtered %>%
+        filter(format(date, "%Y") == input$year_barchart)
+      ggplot(filtered_data, aes(x = date)) +
+        geom_histogram(aes(y = ..count..), binwidth = 10, fill = "lavender", color = "black") +
+        geom_density(aes(y = ..count.. * 10), color = "blue", size = 1) +
+        labs(title = " ", x = "Date", y = "Number of Emails") +
+        theme_minimal()
+    }
+  })
+}
+
+# Run the app ----
+shinyApp(ui = ui, server = server)
