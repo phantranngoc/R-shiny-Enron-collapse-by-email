@@ -1,4 +1,5 @@
 "Enron’s Story Through Emails: A Dashboard Analysis" with R shiny app
+-------------------------------------------------------------------------
 
 This analysis presents data on the Enron company's situation from 1999 to 2002, based on email communications among 149 staff members.
 
@@ -15,7 +16,7 @@ Below is a summary of the key findings from the exploration of the Enron email d
 
 4) `The three most frequent words` in email subjects on October 25, 2001, were `"10," "2001," and "meeting".` This suggests that the company may have been organizing additional meetings on this date to address critical issues.
 
-_______________ ____________________ _________________
+-------------------------------------------------------------------------
 Below is a brief history of Enron to help viewers understand the situation
 
 Enron, initially a natural gas company, transformed into an energy trading giant, using innovative financial instruments to drive growth. By early 2001, its stock peaked at over $90 per share, and the company was seen as a model of success. However, doubts arose about its financial practices, particularly its use of special purpose entities (SPEs) to hide debt and inflate profits. In October 2001, Enron admitted to overstating its profits by nearly $600 million, prompting an investigation. The company's stock price plummeted, and employees who had invested heavily in Enron stock suffered significant losses. As the scandal unfolded, it was revealed that Enron had used accounting tricks to conceal billions of dollars in debt. By December 2001, the company filed for bankruptcy under Chapter 11, marking the largest corporate bankruptcy in U.S. history at that time.
